@@ -17,7 +17,6 @@ class CheckersClient:
 
         self.create_gui()
 
-    # ---------- GUI ----------
     def create_gui(self):
         self.root = tk.Tk()
         self.root.title("Шашки Онлайн")
@@ -62,7 +61,6 @@ class CheckersClient:
         self.log = tk.Text(self.root, height=6, state=tk.DISABLED)
         self.log.pack(fill=tk.X)
 
-    # ---------- NETWORK ----------
     def connect(self):
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -98,7 +96,6 @@ class CheckersClient:
                 msg, buffer = buffer.split("\n", 1)
                 self.process(msg)
 
-    # ---------- GAME ----------
     def process(self, msg):
         if "|" not in msg:
             return
@@ -122,10 +119,10 @@ class CheckersClient:
 
         elif cmd == "ERROR":
             self.waiting = False
+            self.my_turn = True   
             self.update_board_state()
             self.log_msg("Ошибка", data["text"])
 
-    # ---------- BOARD ----------
     def real_coords(self, r, c):
         """Преобразование координат для чёрных"""
         if self.color == "black":
@@ -164,7 +161,6 @@ class CheckersClient:
             self.my_turn = False
             self.update_board_state()
 
-    # ---------- LOG ----------
     def log_msg(self, sender, text):
         self.log.config(state=tk.NORMAL)
         self.log.insert(tk.END, f"[{sender}] {text}\n")

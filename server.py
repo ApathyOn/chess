@@ -15,25 +15,31 @@ class CheckersServer:
 
         print("Сервер запущен")
 
-    # ================= NETWORK =================
     def start(self):
         while True:
-            client, _ = self.server.accept()
+            client, addr = self.server.accept()
+            print(f"[CONNECT] Клиент подключился: {addr}")
             threading.Thread(target=self.handle, args=(client,), daemon=True).start()
 
     def handle(self, client):
         buffer = ""
         try:
             while True:
-                data = client.recv(1024).decode()
+                try:
+                    data = client.recv(1024).decode()
+                except ConnectionResetError:
+                    break
+
                 if not data:
                     break
+
                 buffer += data
                 while "\n" in buffer:
                     msg, buffer = buffer.split("\n", 1)
                     self.process(client, msg)
         finally:
             self.disconnect(client)
+
 
     def process(self, client, msg):
         if "|" not in msg:
@@ -43,8 +49,11 @@ class CheckersServer:
 
         if cmd == "JOIN":
             self.players[client] = {"name": data["name"], "game": None, "color": None}
+            print(f"[JOIN] Игрок подключился: {data['name']}")
 
         elif cmd == "FIND":
+            name = self.players[client]["name"]
+            print(f"[FIND] {name} ищет игру")
             if self.waiting is None:
                 self.waiting = client
             else:
@@ -52,9 +61,9 @@ class CheckersServer:
                 self.waiting = None
 
         elif cmd == "MOVE":
+            print(f"[MOVE] {self.players[client]['name']} -> {data['move']}")
             self.handle_move(client, data["move"])
 
-    # ================= GAME =================
     def start_game(self, p1, p2):
         board = self.create_board()
         gid = self.game_id
@@ -72,15 +81,19 @@ class CheckersServer:
         self.players[p2]["game"] = gid
         self.players[p2]["color"] = "black"
 
+        print(f"[START] Игра #{gid}")
+        print(f"        White: {self.players[p1]['name']}")
+        print(f"        Black: {self.players[p2]['name']}")
+
         self.send(p1, "START", {"color": "white", "board": board})
         self.send(p2, "START", {"color": "black", "board": board})
 
-    # ================= MOVE =================
     def handle_move(self, client, move):
         player = self.players[client]
         game = self.games[player["game"]]
 
         if game["turn"] != player["color"]:
+            print(f"[ERROR] Не ваш ход: {player['name']}")
             self.send(client, "ERROR", {"text": "Не ваш ход"})
             return
 
@@ -92,17 +105,17 @@ class CheckersServer:
 
         result = self.validate_and_apply(board, fr, fc, tr, tc, player["color"])
         if not result:
+            print(f"[ERROR] Недопустимый ход от {player['name']}")
             self.send(client, "ERROR", {"text": "Недопустимый ход"})
             return
 
-        # ход успешен → меняем очередь
         game["turn"] = "black" if game["turn"] == "white" else "white"
+        print(f"[BOARD] Ход принят. Следующий ход: {game['turn']}")
 
         data = {"board": board, "turn": game["turn"]}
         self.send(game["white"], "BOARD", data)
         self.send(game["black"], "BOARD", data)
 
-    # ================= VALIDATION =================
     def validate_and_apply(self, board, fr, fc, tr, tc, color):
         if not all(0 <= x < 8 for x in (fr, fc, tr, tc)):
             return False
@@ -123,7 +136,6 @@ class CheckersServer:
 
         must_capture = self.has_any_capture(board, color)
 
-        # ---------- ВЗЯТИЕ ----------
         if abs(dr) == 2 and abs(dc) == 2:
             mr, mc = fr + dr // 2, fc + dc // 2
             mid = board[mr][mc]
@@ -133,7 +145,6 @@ class CheckersServer:
             if color == "black" and mid.lower() != "w":
                 return False
 
-            # направление пешки
             if piece == "w" and dr != -2:
                 return False
             if piece == "b" and dr != 2:
@@ -144,9 +155,8 @@ class CheckersServer:
             board[tr][tc] = piece
             return True
 
-        # ---------- ОБЫЧНЫЙ ХОД ----------
         if must_capture:
-            return False  # обязательное взятие
+            return False
 
         if abs(dr) != 1 or abs(dc) != 1:
             return False
@@ -160,7 +170,6 @@ class CheckersServer:
         board[tr][tc] = piece
         return True
 
-    # ================= CAPTURE CHECK =================
     def has_any_capture(self, board, color):
         enemy = "b" if color == "white" else "w"
 
@@ -184,7 +193,6 @@ class CheckersServer:
                         return True
         return False
 
-    # ================= UTILS =================
     def create_board(self):
         board = []
         for r in range(8):
@@ -209,7 +217,11 @@ class CheckersServer:
             pass
 
     def disconnect(self, client):
-        self.players.pop(client, None)
+        player = self.players.pop(client, None)
+        if player:
+            print(f"[DISCONNECT] {player['name']} отключился")
+        else:
+            print("[DISCONNECT] Клиент отключился")
         try:
             client.close()
         except:
